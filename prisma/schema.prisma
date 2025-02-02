@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id String @id @unique @default(uuid())
+
+  email     String  @unique
+  phone     String? @unique
+  password  String
+  firstName String  @map("first_name")
+  lastName  String  @map("last_name")
+  surname   String?
+
+  dateOfBirth DateTime? @map("date_of_birth")
+  gender      Gender?
+
+  role      Role[]   @default([GUEST])
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  avatar   File?   @relation(fields: [avatarId], references: [id]) // Ссылка на файл-аватар
+  avatarId String? @map("avatar_id") // ID файла-аватара 
+
+  emailConfirmed Boolean @default(false) @map("email_confirmed")
+  phoneConfirmed Boolean @default(false) @map("phone_confirmed")
+
+  confirmCodes  ConfirmCode[]
+  refreshTokens RefreshToken[]
+
+  teacher Teacher?
+  student Student?
+
+  teacherId String? @map("teacher_id") // Связь с ролью учителя
+  studentId String? @map("student_id") // Связь с ролью студента
+
+  @@index([email, phone])
+  @@map("users")
+}
+
+model ConfirmCode {
+  id String @id @default(uuid())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  type     ConfirmCodeType
+  code     String
+  attempts Int             @default(0)
+
+  used Boolean @default(false)
+
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("confirm_codes")
+}
+
+enum ConfirmCodeType {
+  MAIL
+  PHONE
+  RESET_PASSWORD
+  RESET_PHONE
+  RESET_EMAIL
+}
+
+model RefreshToken {
+  id String @id @default(uuid())
+
+  ip        String
+  userAgent String @map("user_agent")
+  token     String @unique
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([token, userId])
+  @@map("refresh_tokens")
+}
+
+enum Role {
+  GUEST
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+model Teacher {
+  id     String @id @unique @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique @map("user_id")
+
+  groups   Group[] // Группы, которыми управляет учитель
+  subjects Subject[] // Предметы, которые ведет учитель
+
+  @@map("teachers")
+}
+
+model Student {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique @map("user_id")
+
+  group   Group?  @relation(fields: [groupId], references: [id]) // Группа, к которой относится студент
+  groupId String? @map("group_id")
+
+  solutions Solution[]
+
+  @@map("students")
+}
+
+model Specialty {
+  id        Int    @id @default(autoincrement())
+  name      String @unique // Название специальности (например, "Программирование", "Механика")
+  shortName String @unique @map("short_name") // Короткое название специальности (например, "Прог", "Мех")
+
+  groups Group[] // Группы, связанные с этой специальностью
+
+  @@map("specialties")
+}
+
+model Group {
+  id          String    @id @default(uuid())
+  number      Int       @map("number") // Номер группы
+  baseOnGrade GradeBase @map("base_on_grade") // Группа базируется на уровне образования
+
+  specialty   Specialty @relation(fields: [specialtyId], references: [id]) // Связь с моделью Specialty
+  specialtyId Int       @map("specialty_id") // ID специальности
+
+  teacher   Teacher? @relation(fields: [teacherId], references: [id]) // Преподаватель группы
+  teacherId String?  @map("teacher_id")
+
+  students Student[] // Студенты в группе
+  subjects Subject[] // Предметы группы
+
+  @@map("groups")
+}
+
+enum GradeBase {
+  NINE
+  ELEVEN
+}
+
+model Subject {
+  id        String   @id @default(uuid())
+  name      String // Название предмета (например, "Математика", "Физика")
+  teacher   Teacher? @relation(fields: [teacherId], references: [id]) // Учитель, ведущий предмет
+  teacherId String?  @map("teacher_id")
+  group     Group?   @relation(fields: [groupId], references: [id]) // Группа, изучающая предмет
+  groupId   String?  @map("group_id")
+
+  tasks Task[] // Задания по предмету
+
+  @@map("subjects")
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String // Заголовок задания
+  description String // Описание задания
+  deadline    DateTime // Срок выполнения
+  methodFiles File[] // Методические материалы (файлы)
+
+  subject   Subject @relation(fields: [subjectId], references: [id]) // Предмет задания
+  subjectId String
+
+  solutions Solution[] // Решения задания
+
+  @@map("tasks")
+}
+
+model Solution {
+  id               String         @id @default(uuid())
+  mainFile         File           @relation("MainFileRelation", fields: [mainFileId], references: [id]) // Главный файл решения
+  mainFileId       String         @map("main_file_id")
+  additionalFiles  File[]         @relation("AdditionalFilesRelation") // Второстепенные файлы
+  student          Student        @relation(fields: [studentId], references: [id]) // Студент, решивший задание
+  studentId        String         @map("student_id")
+  task             Task           @relation(fields: [taskId], references: [id]) // Задание
+  taskId           String         @map("task_id")
+  status           SolutionStatus @default(SUBMITTED) // Статус решения
+  grade            Int? // Оценка
+  feedback         String? // Комментарии учителя
+  submittedAt      DateTime       @default(now()) @map("submitted_at") // Время отправки решения
+  reviewedAt       DateTime?      @map("reviewed_at") // Время проверки решения
+  resubmitDeadline DateTime?      @map("resubmit_deadline") // Дата, до которой нужно пересдать решение
+
+  resubmissions ResubmittedSolution[] // Связь с пересдачами
+
+  @@map("solutions")
+}
+
+model ResubmittedSolution {
+  id                 String         @id @unique @default(uuid())
+  originalSolution   Solution       @relation(fields: [originalSolutionId], references: [id], onDelete: Cascade)
+  originalSolutionId String
+  mainFile           File           @relation("ResubmittedSolutionMainFile", fields: [mainFileId], references: [id])
+  mainFileId         String         @unique
+  additionalFiles    File[]         @relation("ResubmittedSolutionAdditionalFiles")
+  status             SolutionStatus @default(SUBMITTED)
+  grade              Int?
+  feedback           String?
+  submittedAt        DateTime       @default(now())
+  reviewedAt         DateTime?
+
+  @@map("resubmissions")
+}
+
+model File {
+  id         String   @id @default(uuid())
+  name       String // Имя файла
+  extension  String // Расширение файла
+  path       String // Путь до файла
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  // Отношения
+  mainFileSolutions       Solution[] @relation("MainFileRelation") // Связь с основным файлом решений
+  additionalFileSolutions Solution[] @relation("AdditionalFilesRelation") // Связь с дополнительными файлами
+
+  resubmittedMainFile        ResubmittedSolution?  @relation("ResubmittedSolutionMainFile")
+  resubmittedAdditionalFiles ResubmittedSolution[] @relation("ResubmittedSolutionAdditionalFiles")
+
+  Task   Task?   @relation(fields: [taskId], references: [id])
+  taskId String? @map("task_id")
+  user   User[]
+
+  @@map("files")
+}
+
+enum SolutionStatus {
+  SUBMITTED // Отправлено
+  UNDER_REVIEW // На проверке
+  ACCEPTED // Принято
+  RESUBMIT // Пересдача
+}
+
+enum Gender {
+  Male
+  Female
+}
