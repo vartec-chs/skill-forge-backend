@@ -2,14 +2,15 @@ import { BadRequestException, HttpException, Injectable, NotFoundException } fro
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 
-import { PrismaService } from '@/prisma/prisma.service'
+import { ConfirmCodeType, Role } from '@prisma/client'
 
-import { Role } from '@prisma/client'
+import { MailService } from '@/modules/mail/mail.service'
+import { PrismaService } from '@/modules/prisma/prisma.service'
+import { CreateUserDto } from '@/modules/users/dto/create-user.dto'
+import { UsersService } from '@/modules/users/users.service'
+import { generateConfirmToken } from '@/utils/token-generator'
 
-import { MailService } from '@/mail/mail.service'
-import { CreateUserDto } from '@/users/dto/create-user.dto'
-import { UsersService } from '@/users/users.service'
-
+import { ChangePasswordWithTokenDto } from './dto/reset-password.dto'
 import { SignInWithEmailDto, SignInWithPhoneDto } from './dto/sign-in.dto'
 import { AccessTokenPayload, RefreshTokenPayload } from './types'
 
@@ -29,29 +30,38 @@ export class AuthService {
 	async signUp(createUserDto: CreateUserDto) {
 		const user = await this.usersService.create(createUserDto)
 
-		const mailConfirmCode = Math.floor(Math.random() * (9999 - 1000 + 1) + 1000)
-
-		try {
-			await this.mailService.sendMailConfirmCode(mailConfirmCode, user.email)
-		} catch (error) {
-			throw new HttpException(`Ошибка при отправке письма: ${error}`, 500)
-		}
+		const token = await generateConfirmToken()
+		const url = `${this.configService.get('FRONTEND_URL')}/auth/confirm-email?token=${token}&email=${user.email}`
 
 		const mailConfirmCodeExpiresAt = new Date(Date.now() + 5 * 60 * 1000)
 
-		await this.prismaService.confirmCode.create({
+		const confirmToken = await this.prismaService.confirmTokens.create({
 			data: {
 				type: 'MAIL',
-				code: mailConfirmCode.toString(),
+				token,
 				expiresAt: mailConfirmCodeExpiresAt,
 				userId: user.id,
 			},
 		})
 
+		try {
+			await this.mailService.sendMailConfirmURL(url, user.email)
+		} catch (error) {
+			await this.prismaService.confirmTokens.delete({
+				where: {
+					id: confirmToken.id,
+				},
+			})
+			throw new HttpException(
+				`Ошибка при отправке письма. Действие отменено. Ошибка: ${error}`,
+				500,
+			)
+		}
+
 		return {
 			status: 200,
 			message:
-				'Вы успешно зарегистрировались. Код подтверждения отправлен на вашу электронную почту. Код действителен 5 минут',
+				'Вы успешно зарегистрировались. Ссылка подтверждения отправлен на вашу электронную почту. Ссылка действительна 5 минут',
 			data: {
 				id: user.id,
 				email: user.email,
@@ -72,7 +82,7 @@ export class AuthService {
 
 		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
 
-		if (!user.emailConfirmed) return await this.sendConfirmEmailCode(user.email, user.id)
+		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
 
 		const { accessToken, refreshToken } = await this.generateTokens(
 			user.id,
@@ -108,7 +118,7 @@ export class AuthService {
 
 		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
 
-		if (!user.emailConfirmed) return await this.sendConfirmEmailCode(user.email, user.id)
+		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
 
 		const { accessToken, refreshToken } = await this.generateTokens(
 			user.id,
@@ -159,7 +169,7 @@ export class AuthService {
 			},
 		})
 
-		const res = req.res as Response
+		const res = req.res
 
 		res.clearCookie('refreshToken')
 		res.clearCookie('accessToken')
@@ -247,93 +257,75 @@ export class AuthService {
 		}
 	}
 
-	private async sendConfirmEmailCode(email: string, userId: string) {
-		const confirmCode = Math.floor(Math.random() * (9999 - 1000 + 1) + 1000)
-
-		const existsActiveCode = await this.prismaService.confirmCode.findFirst({
-			where: {
-				type: 'MAIL',
-				userId,
-			},
-		})
-
-		if (existsActiveCode) {
-			const currentDate = new Date()
-			if (currentDate <= existsActiveCode.expiresAt) {
-				const diff = existsActiveCode.expiresAt.getTime() - currentDate.getTime()
-				const minutes = Math.floor(diff / 1000 / 60)
-				const seconds = Math.floor((diff / 1000) % 60)
-				if (minutes > 0) {
-					throw new HttpException(
-						`Подтверждение по почте уже отправлено. Оставшееся время: ${minutes} минут ${seconds} секунд`,
-						400,
-						{
-							description: 'Подтверждение по почте уже отправлено',
-						},
-					)
-				} else {
-					await this.prismaService.confirmCode.deleteMany({
-						where: {
-							id: existsActiveCode.id,
-							type: 'MAIL',
-							userId,
-						},
-					})
-				}
-			}
-		}
-
-		try {
-			await this.mailService.sendMailConfirmCode(confirmCode, email)
-		} catch (error) {
-			throw new HttpException(`Ошибка при отправке письма: ${error}`, 500)
-		}
-
-		const mailConfirmCodeExpiresAt = new Date(Date.now() + 5 * 60 * 1000)
-
-		await this.prismaService.confirmCode.create({
-			data: {
-				type: 'MAIL',
-				code: confirmCode.toString(),
-				expiresAt: mailConfirmCodeExpiresAt,
-				userId,
-			},
-		})
-
-		return {
-			status: 1001,
-			message: 'Код подтверждения отправлен на вашу электронную почту. Он активен 5 минут',
-			data: email,
-		}
+	async resendConfirmEmail(email: string) {
+		return await this.sendConfirmEmailURL(email)
 	}
 
-	async confirmEmail(confirmCode: number, email: string) {
-		const user = await this.prismaService.user.findUnique({
-			where: { email },
-		})
-		if (!user) throw new NotFoundException('Пользователь не найден')
-
-		const existsActiveCode = await this.prismaService.confirmCode.findFirst({
+	async confirmEmail(token: string, email: string) {
+		const confirmTokenExists = await this.prismaService.confirmTokens.findFirst({
 			where: {
-				type: 'MAIL',
-				userId: user.id,
+				user: {
+					email,
+				},
+				type: ConfirmCodeType.MAIL,
+				used: false,
+			},
+			select: {
+				id: true,
+				expiresAt: true,
+				attempts: true,
+				token: true,
+				user: {
+					select: {
+						id: true,
+						email: true,
+					},
+				},
 			},
 		})
-		if (!existsActiveCode) throw new BadRequestException('Код подтверждения не найден')
 
-		if (existsActiveCode.code !== confirmCode.toString())
-			throw new BadRequestException('Код подтверждения неверный')
-
-		const currentDate = new Date()
-		if (currentDate > existsActiveCode.expiresAt) {
-			await this.prismaService.confirmCode.delete({
+		if (!confirmTokenExists) throw new NotFoundException('Код не найден')
+		if (confirmTokenExists.token !== token) {
+			await this.prismaService.confirmTokens.update({
 				where: {
-					id: existsActiveCode.id,
+					id: confirmTokenExists.id,
+				},
+				data: {
+					attempts: {
+						increment: 1,
+					},
 				},
 			})
 
-			return await this.sendConfirmEmailCode(email, user.id)
+			if (confirmTokenExists.attempts >= 3) {
+				await this.prismaService.confirmTokens.delete({
+					where: {
+						id: confirmTokenExists.id,
+					},
+				})
+				throw new BadRequestException('Превышено количество попыток')
+			}
+
+			throw new BadRequestException('Неверный код подтверждения')
 		}
+		if (confirmTokenExists.expiresAt < new Date()) {
+			await this.prismaService.confirmTokens.delete({
+				where: {
+					id: confirmTokenExists.id,
+				},
+			})
+			throw new BadRequestException('Срок действия кода истек')
+		}
+
+		const user = confirmTokenExists.user
+
+		await this.prismaService.confirmTokens.delete({
+			where: {
+				id: confirmTokenExists.id,
+			},
+		})
+
+		if (!user) throw new NotFoundException('Пользователь не найден')
 
 		await this.prismaService.user.update({
 			where: {
@@ -344,16 +336,84 @@ export class AuthService {
 			},
 		})
 
-		await this.prismaService.confirmCode.delete({
+		return {
+			status: 200,
+			message: 'Email подтвержден',
+			data: {
+				id: user.id,
+				email: user.email,
+			},
+		}
+	}
+
+	private async sendConfirmEmailURL(email: string) {
+		const user = await this.usersService.findByEmail(email)
+		if (!user) throw new NotFoundException('Пользователь не найден')
+		if (user.emailConfirmed) throw new BadRequestException('Почта уже подтверждена')
+
+		const confirmTokenExists = await this.prismaService.confirmTokens.findFirst({
 			where: {
-				id: existsActiveCode.id,
+				type: ConfirmCodeType.MAIL,
+				used: false,
+				userId: user.id,
 			},
 		})
 
+		if (confirmTokenExists) {
+			const expiresTime = new Date(confirmTokenExists.expiresAt).getTime()
+			const currentTime = new Date().getTime()
+
+			const minutes = (expiresTime - currentTime) / 1000 / 60
+			const seconds = ((expiresTime - currentTime) / 1000) % 60
+
+			if (minutes > 0 && seconds >= 30) {
+				throw new BadRequestException(
+					`Подтверждение почты уже отправлено. Осталось ${minutes} минут ${seconds} секунд до истечения срока действия`,
+				)
+			} else {
+				await this.prismaService.confirmTokens.delete({
+					where: {
+						id: confirmTokenExists.id,
+					},
+				})
+			}
+		}
+
+		const token = await generateConfirmToken()
+		const url = `${this.configService.get('FRONTEND_URL')}/auth/confirm-email?token=${token}&email=${email}`
+
+		const newConfirmToken = await this.prismaService.confirmTokens.create({
+			data: {
+				type: ConfirmCodeType.MAIL,
+				token,
+				userId: user.id,
+				expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+			},
+		})
+
+		try {
+			await this.mailService.sendMailConfirmURL(url, email)
+		} catch (error) {
+			await this.prismaService.confirmTokens.delete({
+				where: {
+					id: newConfirmToken.id,
+				},
+			})
+			throw new HttpException(
+				`Ошибка при отправке письма. Действие отменено. Ошибка: ${error}`,
+				500,
+			)
+		}
+
 		return {
 			status: 200,
-			message: 'Подтверждение по почте успешно',
-			data: null,
+			message:
+				'Ссылка подтверждения отправлена на вашу электронную почту. Ссылка действительна 5 минут',
+			data: {
+				id: user.id,
+				email: user.email,
+				mailConfirmCodeExpiresAt: newConfirmToken.expiresAt,
+			},
 		}
 	}
 

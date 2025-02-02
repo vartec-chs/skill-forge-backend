@@ -1,98 +1,17 @@
-/*
-  Warnings:
+-- CreateEnum
+CREATE TYPE "ConfirmCodeType" AS ENUM ('MAIL', 'PHONE', 'RESET_PASSWORD', 'RESET_PHONE', 'RESET_EMAIL');
 
-  - You are about to drop the `File` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Group` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `RefreshToken` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Solution` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Specialty` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Student` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Subject` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Task` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `Teacher` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
+-- CreateEnum
+CREATE TYPE "Role" AS ENUM ('GUEST', 'STUDENT', 'TEACHER', 'ADMIN');
 
-*/
 -- CreateEnum
 CREATE TYPE "GradeBase" AS ENUM ('NINE', 'ELEVEN');
 
--- DropForeignKey
-ALTER TABLE "File" DROP CONSTRAINT "File_taskId_fkey";
+-- CreateEnum
+CREATE TYPE "SolutionStatus" AS ENUM ('SUBMITTED', 'UNDER_REVIEW', 'ACCEPTED', 'RESUBMIT');
 
--- DropForeignKey
-ALTER TABLE "Group" DROP CONSTRAINT "Group_specialtyId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Group" DROP CONSTRAINT "Group_teacherId_fkey";
-
--- DropForeignKey
-ALTER TABLE "RefreshToken" DROP CONSTRAINT "RefreshToken_userId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Solution" DROP CONSTRAINT "Solution_mainFileId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Solution" DROP CONSTRAINT "Solution_studentId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Solution" DROP CONSTRAINT "Solution_taskId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Student" DROP CONSTRAINT "Student_groupId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Student" DROP CONSTRAINT "Student_userId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Subject" DROP CONSTRAINT "Subject_groupId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Subject" DROP CONSTRAINT "Subject_teacherId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Task" DROP CONSTRAINT "Task_subjectId_fkey";
-
--- DropForeignKey
-ALTER TABLE "Teacher" DROP CONSTRAINT "Teacher_userId_fkey";
-
--- DropForeignKey
-ALTER TABLE "User" DROP CONSTRAINT "User_avatarId_fkey";
-
--- DropForeignKey
-ALTER TABLE "_AdditionalFilesRelation" DROP CONSTRAINT "_AdditionalFilesRelation_A_fkey";
-
--- DropForeignKey
-ALTER TABLE "_AdditionalFilesRelation" DROP CONSTRAINT "_AdditionalFilesRelation_B_fkey";
-
--- DropTable
-DROP TABLE "File";
-
--- DropTable
-DROP TABLE "Group";
-
--- DropTable
-DROP TABLE "RefreshToken";
-
--- DropTable
-DROP TABLE "Solution";
-
--- DropTable
-DROP TABLE "Specialty";
-
--- DropTable
-DROP TABLE "Student";
-
--- DropTable
-DROP TABLE "Subject";
-
--- DropTable
-DROP TABLE "Task";
-
--- DropTable
-DROP TABLE "Teacher";
-
--- DropTable
-DROP TABLE "User";
+-- CreateEnum
+CREATE TYPE "Gender" AS ENUM ('Male', 'Female');
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -109,10 +28,26 @@ CREATE TABLE "users" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     "avatar_id" TEXT,
+    "email_confirmed" BOOLEAN NOT NULL DEFAULT false,
+    "phone_confirmed" BOOLEAN NOT NULL DEFAULT false,
     "teacher_id" TEXT,
     "student_id" TEXT,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "confirm_tokens" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "type" "ConfirmCodeType" NOT NULL,
+    "token" TEXT NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "used" BOOLEAN NOT NULL DEFAULT false,
+    "expires_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "confirm_tokens_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -122,6 +57,7 @@ CREATE TABLE "refresh_tokens" (
     "user_agent" TEXT NOT NULL,
     "token" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
+    "expires_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
@@ -228,6 +164,14 @@ CREATE TABLE "files" (
 );
 
 -- CreateTable
+CREATE TABLE "_AdditionalFilesRelation" (
+    "A" TEXT NOT NULL,
+    "B" TEXT NOT NULL,
+
+    CONSTRAINT "_AdditionalFilesRelation_AB_pkey" PRIMARY KEY ("A","B")
+);
+
+-- CreateTable
 CREATE TABLE "_ResubmittedSolutionAdditionalFiles" (
     "A" TEXT NOT NULL,
     "B" TEXT NOT NULL,
@@ -275,10 +219,16 @@ CREATE UNIQUE INDEX "resubmissions_id_key" ON "resubmissions"("id");
 CREATE UNIQUE INDEX "resubmissions_mainFileId_key" ON "resubmissions"("mainFileId");
 
 -- CreateIndex
+CREATE INDEX "_AdditionalFilesRelation_B_index" ON "_AdditionalFilesRelation"("B");
+
+-- CreateIndex
 CREATE INDEX "_ResubmittedSolutionAdditionalFiles_B_index" ON "_ResubmittedSolutionAdditionalFiles"("B");
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_avatar_id_fkey" FOREIGN KEY ("avatar_id") REFERENCES "files"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "confirm_tokens" ADD CONSTRAINT "confirm_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

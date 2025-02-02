@@ -7,9 +7,9 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { PassportStrategy } from '@nestjs/passport'
 
-import { PrismaService } from '@/prisma/prisma.service'
-
 import { Role } from '@prisma/client'
+
+import { PrismaService } from '@/modules/prisma/prisma.service'
 
 import { AccessTokenPayload } from '../types'
 

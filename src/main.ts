@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config'
 import { NestFactory, Reflector } from '@nestjs/core'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 
-import { AppModule } from '@/app.module'
-import { AuthGuard } from '@/auth/guards/auth.guard'
+import { AppModule } from '@/modules/app.module'
+import { AuthGuard } from '@/modules/auth/guards/auth.guard'
 
 import cookieParser from 'cookie-parser'
 

@@ -5,22 +5,28 @@ import { Injectable } from '@nestjs/common'
 export class MailService {
 	constructor(private readonly mailerService: MailerService) {}
 
-	async sendMailConfirmCode(code: number, email: string) {
+	async sendMailConfirmURL(url: string, email: string) {
 		return await this.mailerService.sendMail({
 			to: email,
 			subject: 'Подтверждение регистрации на сайте skill-bridge.ru',
 			html: `
-				<p style="font-size: 18px;">Код для подтверждения: <b style="font-size: 18px; ">${code}</b>. Используйте его для подтверждения регистрации.</p>
+			<h3>Подтверждение регистрации</h3>
+			<br />
+			<br />
+			<p>Чтобы завершить регистрацию, перейдите по <a href="${url}">${url}</a></p>
 			`,
 		})
 	}
 
-	async sendPasswordResetCode(email: string, code: number) {
+	async sendPasswordResetURL(url: string, email: string) {
 		return await this.mailerService.sendMail({
 			to: email,
 			subject: 'Сброс пароля на сайте skill-bridge.ru',
 			html: `
-				<p style="font-size: 18px;">Код для сброса пароля: <b style="font-size: 18px; ">${code}</b>. Используйте его для сброса пароля.</p>
+			<h3>Сброс пароля</h3>
+			<br />
+			<br />
+			<p >Чтобы сбросить пароль, перейдите по <a href="${url}">${url}</a></p>
 			`,
 		})
 	}

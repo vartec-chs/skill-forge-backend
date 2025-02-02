@@ -30,7 +30,7 @@ model User {
   emailConfirmed Boolean @default(false) @map("email_confirmed")
   phoneConfirmed Boolean @default(false) @map("phone_confirmed")
 
-  confirmCodes  ConfirmCode[]
+  confirmTokens ConfirmTokens[]
   refreshTokens RefreshToken[]
 
   teacher Teacher?
@@ -43,14 +43,14 @@ model User {
   @@map("users")
 }
 
-model ConfirmCode {
+model ConfirmTokens {
   id String @id @default(uuid())
 
   user   User   @relation(fields: [userId], references: [id])
   userId String @map("user_id")
 
   type     ConfirmCodeType
-  code     String
+  token    String
   attempts Int             @default(0)
 
   used Boolean @default(false)
@@ -58,8 +58,9 @@ model ConfirmCode {
   expiresAt DateTime? @map("expires_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  @@map("confirm_codes")
+  @@map("confirm_tokens")
 }
+
 
 enum ConfirmCodeType {
   MAIL

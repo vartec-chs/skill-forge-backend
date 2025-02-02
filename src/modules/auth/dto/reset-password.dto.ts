@@ -38,7 +38,6 @@ export class ChangePasswordDto {
 	newPassword: string
 }
 
-
 export class ConfirmResetPasswordDto {
 	@IsString()
 	@IsNotEmpty()
@@ -50,4 +49,12 @@ export class ConfirmResetPasswordDto {
 	@IsEmail()
 	@ApiProperty({ description: 'Почта', type: String, required: true })
 	email: string
+}
+
+export class ChangePasswordWithTokenDto {
+	@IsString()
+	@IsNotEmpty()
+	@MinLength(8)
+	@ApiProperty({ description: 'Новый пароль', type: String, format: 'password', required: true })
+	newPassword: string
 }
