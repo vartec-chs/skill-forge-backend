@@ -62,6 +62,32 @@ export class UsersService {
 		return user
 	}
 
+	async findByData(data: string) {
+		const user = await this.prismaService.user.findFirst({
+			where: {
+				OR: [
+					{
+						phone: data,
+					},
+					{
+						email: data,
+					},
+				],
+			},
+			select: {
+				id: true,
+				email: true,
+				firstName: true,
+				lastName: true,
+				role: true,
+				password: true,
+				emailConfirmed: true,
+			},
+		})
+
+		return user
+	}
+
 	async findByPhone(phone: string) {
 		const user = await this.prismaService.user.findUnique({
 			where: { phone },

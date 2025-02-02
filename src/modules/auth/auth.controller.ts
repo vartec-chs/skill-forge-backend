@@ -9,11 +9,8 @@ import { AuthService } from './auth.service'
 import { CurrentUser } from './decorators/current-user.decorator'
 import { Public } from './decorators/public.decorator'
 import { Roles } from './decorators/roles.decorator'
-import {
-	ChangePasswordDto,
-	ConfirmResetPasswordDto,
-	ResetPasswordDto,
-} from './dto/reset-password.dto'
+import { ConfirmEmailDto } from './dto/confirm-email.dto'
+import { ChangePasswordDto, ResetPasswordDto } from './dto/reset-password.dto'
 import { SignInWithEmailDto, SignInWithPhoneDto } from './dto/sign-in.dto'
 import { PasswordResetService } from './password.service'
 
@@ -64,6 +61,21 @@ export class AuthController {
 		return await this.authService.signOut(req)
 	}
 
+	@Post('change-password')
+	@ApiOperation({ summary: 'Смена пароля' })
+	async changePassword(
+		@Body() changePasswordDto: ChangePasswordDto,
+		@CurrentUser('userId') userId: string,
+	) {
+		return await this.passwordResetService.changePassword(userId, changePasswordDto)
+	}
+
+	@Get('me')
+	@ApiOperation({ summary: 'Получение информации о пользователе' })
+	async getMe(@CurrentUser('userId') userId: string) {
+		return await this.authService.getMe(userId)
+	}
+
 	@Public()
 	@Post('resend-confirm-email')
 	@ApiOperation({ summary: 'Переслать код подтверждения' })
@@ -73,17 +85,24 @@ export class AuthController {
 	}
 
 	@Public()
-	@Get('confirm-email')
+	@Post('confirm-email')
 	@ApiOperation({ summary: 'Подтверждение электронной почты' })
-	@ApiQuery({ name: 'token', description: 'Токен подтверждения', required: true, type: String })
-	@ApiQuery({ name: 'email', description: 'Электронная почта', required: true, type: String })
-	async confirmEmail(@Query('token') token: string, @Query('email') email: string) {
-		return await this.authService.confirmEmail(token, email)
+	async confirmEmail(@Body() confirmEmailDto: ConfirmEmailDto) {
+		return await this.authService.confirmEmail(confirmEmailDto.email, confirmEmailDto.token)
 	}
 
-	@Get('me')
-	@ApiOperation({ summary: 'Получение информации о пользователе' })
-	async getMe(@CurrentUser('userId') userId: string) {
-		return await this.authService.getMe(userId)
+	@Public()
+	@Post('request-password-reset/:email')
+	@ApiOperation({ summary: 'Запрос на сброс пароля' })
+	@ApiParam({ name: 'email', description: 'Электронная почта', required: true, type: String })
+	async requestPasswordReset(@Param('email') email: string) {
+		return await this.passwordResetService.sendResetPasswordEmail(email)
+	}
+
+	@Public()
+	@Post('password-reset')
+	@ApiOperation({ summary: 'Сброс пароля' })
+	async passwordReset(@Body() resetPasswordDto: ResetPasswordDto) {
+		return await this.passwordResetService.resetPassword(resetPasswordDto)
 	}
 }

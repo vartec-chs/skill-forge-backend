@@ -10,7 +10,7 @@ import { CreateUserDto } from '@/modules/users/dto/create-user.dto'
 import { UsersService } from '@/modules/users/users.service'
 import { generateConfirmToken } from '@/utils/token-generator'
 
-import { ChangePasswordWithTokenDto } from './dto/reset-password.dto'
+
 import { SignInWithEmailDto, SignInWithPhoneDto } from './dto/sign-in.dto'
 import { AccessTokenPayload, RefreshTokenPayload } from './types'
 
@@ -71,76 +71,11 @@ export class AuthService {
 	}
 
 	async signInWithEmail(signInWithEmailDto: SignInWithEmailDto, req: Request) {
-		const user = await this.usersService.findByEmail(signInWithEmailDto.email)
-		if (!user) throw new BadRequestException('Неверные данные для входа')
-
-		const isPasswordValid = await argon2.verify(user.password, signInWithEmailDto.password)
-		if (!isPasswordValid) throw new BadRequestException('Неверные данные для входа')
-
-		const ip = req.ip
-		const userAgent = req.headers['user-agent'] as string
-
-		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
-
-		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
-
-		const { accessToken, refreshToken } = await this.generateTokens(
-			user.id,
-			ip,
-			userAgent,
-			user.role,
-		)
-
-		await this.setAuthCookies(req.res, accessToken, refreshToken)
-
-		return {
-			status: 200,
-			message: 'Авторизация успешна',
-			data: {
-				id: user.id,
-				email: user.email,
-				firstName: user.firstName,
-				lastName: user.lastName,
-				role: user.role,
-			},
-		}
+		return await this.signIn(signInWithEmailDto.email, signInWithEmailDto.password, req)
 	}
 
 	async signInWithPhone(signInWithPhoneDto: SignInWithPhoneDto, req: Request) {
-		const user = await this.usersService.findByPhone(signInWithPhoneDto.phone)
-		if (!user) throw new BadRequestException('Неверные данные для входа')
-
-		const isPasswordValid = await argon2.verify(user.password, signInWithPhoneDto.password)
-		if (!isPasswordValid) throw new BadRequestException('Неверные данные для входа')
-
-		const ip = req.ip
-		const userAgent = req.headers['user-agent'] as string
-
-		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
-
-		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
-
-		const { accessToken, refreshToken } = await this.generateTokens(
-			user.id,
-			ip,
-			userAgent,
-			user.role,
-		)
-
-		await this.setAuthCookies(req.res, accessToken, refreshToken)
-
-		return {
-			status: 200,
-			message: 'Авторизация успешна',
-			data: {
-				id: user.id,
-				email: user.email,
-				phone: user.phone,
-				firstName: user.firstName,
-				lastName: user.lastName,
-				role: user.role,
-			},
-		}
+		return await this.signIn(signInWithPhoneDto.phone, signInWithPhoneDto.password, req)
 	}
 
 	async signOut(req: Request) {
@@ -342,6 +277,42 @@ export class AuthService {
 			data: {
 				id: user.id,
 				email: user.email,
+			},
+		}
+	}
+
+	private async signIn(data: string, password: string, req: Request) {
+		const user = await this.usersService.findByData(data)
+		if (!user) throw new BadRequestException('Неверные данные для входа')
+
+		const isPasswordValid = await argon2.verify(user.password, password)
+		if (!isPasswordValid) throw new BadRequestException('Неверные данные для входа')
+
+		const ip = req.ip
+		const userAgent = req.headers['user-agent'] as string
+
+		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
+
+		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
+
+		const { accessToken, refreshToken } = await this.generateTokens(
+			user.id,
+			ip,
+			userAgent,
+			user.role,
+		)
+
+		await this.setAuthCookies(req.res, accessToken, refreshToken)
+
+		return {
+			status: 200,
+			message: 'Авторизация успешна',
+			data: {
+				id: user.id,
+				email: user.email,
+				firstName: user.firstName,
+				lastName: user.lastName,
+				role: user.role,
 			},
 		}
 	}
