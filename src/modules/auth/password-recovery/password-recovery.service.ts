@@ -1,24 +1,21 @@
-import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
-
-import { MailService } from '@/modules/mail/mail.service'
-import { PrismaService } from '@/modules/prisma/prisma.service'
-import { generateConfirmToken } from '@/utils/token-generator'
-
-import { ChangePasswordDto, ResetPasswordDto } from './dto/reset-password.dto'
-
-import { UsersService } from '../users/users.service'
-
-import * as argon2 from 'argon2'
+import { MailService } from '@/modules/mail/mail.service';
+import { PrismaService } from '@/modules/prisma/prisma.service';
+import { UsersService } from '@/modules/users/users.service';
+import { generateConfirmToken } from '@/utils/token-generator';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as argon2 from 'argon2';
+import { ChangePasswordDto, ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
-export class PasswordResetService {
+export class PasswordRecoveryService {
 	constructor(
-		private prismaService: PrismaService,
-		private mailService: MailService,
-		private configService: ConfigService,
-		private usersService: UsersService,
+		private readonly prismaService: PrismaService,
+		private readonly mailService: MailService,
+		private readonly configService: ConfigService,
+		private readonly usersService: UsersService,
 	) {}
+
 
 	async sendResetPasswordEmail(email: string) {
 		const user = await this.prismaService.user.findUnique({

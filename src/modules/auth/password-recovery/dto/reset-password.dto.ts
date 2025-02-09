@@ -33,3 +33,10 @@ export class ChangePasswordDto {
 	@ApiProperty({ description: 'Новый пароль', type: String, format: 'password', required: true })
 	newPassword: string
 }
+
+export class RequestPasswordResetDto {
+	@IsEmail()
+	@IsNotEmpty()
+	@ApiProperty({ description: 'Почта', type: String, required: true })
+	email: string
+}

@@ -13,3 +13,4 @@ export class ConfirmEmailDto {
 	@ApiProperty({ description: 'Токен', type: String, required: true })
 	token: string
 }
+

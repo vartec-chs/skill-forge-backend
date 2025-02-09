@@ -2,7 +2,7 @@ import { BadRequestException, HttpException, Injectable, NotFoundException } fro
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 
-import { ConfirmCodeType, Role } from '@prisma/client'
+import { Role } from '@prisma/client'
 
 import { MailService } from '@/modules/mail/mail.service'
 import { PrismaService } from '@/modules/prisma/prisma.service'
@@ -10,8 +10,9 @@ import { CreateUserDto } from '@/modules/users/dto/create-user.dto'
 import { UsersService } from '@/modules/users/users.service'
 import { generateConfirmToken } from '@/utils/token-generator'
 
-
 import { SignInWithEmailDto, SignInWithPhoneDto } from './dto/sign-in.dto'
+import { EmailConfirmationService } from './email-confirmation/email-confirmation.service'
+import { TwoFactorAuthService } from './two-factor-auth/two-factor-auth.service'
 import { AccessTokenPayload, RefreshTokenPayload } from './types'
 
 import * as argon2 from 'argon2'
@@ -25,6 +26,8 @@ export class AuthService {
 		private configService: ConfigService,
 		private prismaService: PrismaService,
 		private mailService: MailService,
+		private emailConfirmationService: EmailConfirmationService,
+		private twoFactorAuthService: TwoFactorAuthService,
 	) {}
 
 	async signUp(createUserDto: CreateUserDto) {
@@ -59,7 +62,7 @@ export class AuthService {
 		}
 
 		return {
-			status: 200,
+			statusCode: 200,
 			message:
 				'Вы успешно зарегистрировались. Ссылка подтверждения отправлен на вашу электронную почту. Ссылка действительна 5 минут',
 			data: {
@@ -71,11 +74,21 @@ export class AuthService {
 	}
 
 	async signInWithEmail(signInWithEmailDto: SignInWithEmailDto, req: Request) {
-		return await this.signIn(signInWithEmailDto.email, signInWithEmailDto.password, req)
+		return await this.signIn(
+			signInWithEmailDto.email,
+			signInWithEmailDto.password,
+			req,
+			signInWithEmailDto.twoFactorMailAuthCode,
+		)
 	}
 
 	async signInWithPhone(signInWithPhoneDto: SignInWithPhoneDto, req: Request) {
-		return await this.signIn(signInWithPhoneDto.phone, signInWithPhoneDto.password, req)
+		return await this.signIn(
+			signInWithPhoneDto.phone,
+			signInWithPhoneDto.password,
+			req,
+			signInWithPhoneDto.twoFactorMailAuthCode,
+		)
 	}
 
 	async signOut(req: Request) {
@@ -110,7 +123,7 @@ export class AuthService {
 		res.clearCookie('accessToken')
 
 		return {
-			status: 200,
+			statusCode: 200,
 			message: 'Вы вышли из системы',
 		}
 	}
@@ -124,7 +137,7 @@ export class AuthService {
 		})
 
 		return {
-			status: 200,
+			statusCode: 200,
 			message: 'Получена информация о пользователе',
 			data: user,
 		}
@@ -186,102 +199,13 @@ export class AuthService {
 		await this.setAuthCookies(req.res, accessToken, refreshToken)
 
 		return {
-			status: 200,
+			statusCode: 200,
 			message: 'Обновление токенов успешно',
 			data: null,
 		}
 	}
 
-	async resendConfirmEmail(email: string) {
-		return await this.sendConfirmEmailURL(email)
-	}
-
-	async confirmEmail(token: string, email: string) {
-		const confirmTokenExists = await this.prismaService.confirmTokens.findFirst({
-			where: {
-				user: {
-					email,
-				},
-				type: ConfirmCodeType.MAIL,
-				used: false,
-			},
-			select: {
-				id: true,
-				expiresAt: true,
-				attempts: true,
-				token: true,
-				user: {
-					select: {
-						id: true,
-						email: true,
-					},
-				},
-			},
-		})
-
-		if (!confirmTokenExists) throw new NotFoundException('Код не найден')
-		if (confirmTokenExists.token !== token) {
-			await this.prismaService.confirmTokens.update({
-				where: {
-					id: confirmTokenExists.id,
-				},
-				data: {
-					attempts: {
-						increment: 1,
-					},
-				},
-			})
-
-			if (confirmTokenExists.attempts >= 3) {
-				await this.prismaService.confirmTokens.delete({
-					where: {
-						id: confirmTokenExists.id,
-					},
-				})
-				throw new BadRequestException('Превышено количество попыток')
-			}
-
-			throw new BadRequestException('Неверный код подтверждения')
-		}
-		if (confirmTokenExists.expiresAt < new Date()) {
-			await this.prismaService.confirmTokens.delete({
-				where: {
-					id: confirmTokenExists.id,
-				},
-			})
-			throw new BadRequestException('Срок действия кода истек')
-		}
-
-		const user = confirmTokenExists.user
-
-		await this.prismaService.confirmTokens.delete({
-			where: {
-				id: confirmTokenExists.id,
-			},
-		})
-
-		if (!user) throw new NotFoundException('Пользователь не найден')
-
-		await this.prismaService.user.update({
-			where: {
-				id: user.id,
-			},
-			data: {
-				emailConfirmed: true,
-			},
-		})
-
-		return {
-			status: 200,
-			message: 'Email подтвержден',
-			data: {
-				id: user.id,
-				email: user.email,
-			},
-		}
-	}
-
-	private async signIn(data: string, password: string, req: Request) {
+	private async signIn(data: string, password: string, req: Request, twoFactorMailCode?: string) {
 		const user = await this.usersService.findByData(data)
 		if (!user) throw new BadRequestException('Неверные данные для входа')
 
@@ -293,7 +217,25 @@ export class AuthService {
 
 		if (!ip || !userAgent) throw new BadRequestException('Ip (и) или userAgent не указан(ы)')
 
-		if (!user.emailConfirmed) return await this.sendConfirmEmailURL(user.email)
+		if (!user.emailConfirmed)
+			return await this.emailConfirmationService.sendConfirmEmailURL(user.email)
+
+		if (user.isTwoFactorMailEnabled) {
+			if (!twoFactorMailCode) {
+				await this.twoFactorAuthService.sendTwoFactorToken(user.email)
+
+				return {
+					statusCode: 1100,
+					message: 'Проверьте вашу почту. Требуется код двухфакторной аутентификации.',
+					data: null,
+				}
+			} else {
+				await this.twoFactorAuthService.validateTwoFactorMailAuthToken(
+					twoFactorMailCode,
+					user.email,
+				)
+			}
+		}
 
 		const { accessToken, refreshToken } = await this.generateTokens(
 			user.id,
@@ -305,7 +247,7 @@ export class AuthService {
 		await this.setAuthCookies(req.res, accessToken, refreshToken)
 
 		return {
-			status: 200,
+			statusCode: 200,
 			message: 'Авторизация успешна',
 			data: {
 				id: user.id,
@@ -313,77 +255,6 @@ export class AuthService {
 				firstName: user.firstName,
 				lastName: user.lastName,
 				role: user.role,
-			},
-		}
-	}
-
-	private async sendConfirmEmailURL(email: string) {
-		const user = await this.usersService.findByEmail(email)
-		if (!user) throw new NotFoundException('Пользователь не найден')
-		if (user.emailConfirmed) throw new BadRequestException('Почта уже подтверждена')
-
-		const confirmTokenExists = await this.prismaService.confirmTokens.findFirst({
-			where: {
-				type: ConfirmCodeType.MAIL,
-				used: false,
-				userId: user.id,
-			},
-		})
-
-		if (confirmTokenExists) {
-			const expiresTime = new Date(confirmTokenExists.expiresAt).getTime()
-			const currentTime = new Date().getTime()
-
-			const minutes = (expiresTime - currentTime) / 1000 / 60
-			const seconds = ((expiresTime - currentTime) / 1000) % 60
-
-			if (minutes > 0 && seconds >= 30) {
-				throw new BadRequestException(
-					`Подтверждение почты уже отправлено. Осталось ${minutes} минут ${seconds} секунд до истечения срока действия`,
-				)
-			} else {
-				await this.prismaService.confirmTokens.delete({
-					where: {
-						id: confirmTokenExists.id,
-					},
-				})
-			}
-		}
-
-		const token = await generateConfirmToken()
-		const url = `${this.configService.get('FRONTEND_URL')}/auth/confirm-email?token=${token}&email=${email}`
-
-		const newConfirmToken = await this.prismaService.confirmTokens.create({
-			data: {
-				type: ConfirmCodeType.MAIL,
-				token,
-				userId: user.id,
-				expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-			},
-		})
-
-		try {
-			await this.mailService.sendMailConfirmURL(url, email)
-		} catch (error) {
-			await this.prismaService.confirmTokens.delete({
-				where: {
-					id: newConfirmToken.id,
-				},
-			})
-			throw new HttpException(
-				`Ошибка при отправке письма. Действие отменено. Ошибка: ${error}`,
-				500,
-			)
-		}
-
-		return {
-			status: 200,
-			message:
-				'Ссылка подтверждения отправлена на вашу электронную почту. Ссылка действительна 5 минут',
-			data: {
-				id: user.id,
-				email: user.email,
-				mailConfirmCodeExpiresAt: newConfirmToken.expiresAt,
 			},
 		}
 	}
@@ -452,15 +323,15 @@ export class AuthService {
 	private async setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
 		res.cookie('refreshToken', refreshToken, {
 			httpOnly: true,
-			secure: true,
-			sameSite: 'none',
+			// secure: true,
+			// sameSite: 'none',
 			maxAge: 1000 * 60 * 60 * 24 * 14, // 14 days
 		})
 
 		res.cookie('accessToken', accessToken, {
 			httpOnly: true,
-			secure: true,
-			sameSite: 'none',
+			// secure: true,
+			// sameSite: 'none',
 			maxAge: 1000 * 60 * 15, // 15 minutes
 		})
 	}

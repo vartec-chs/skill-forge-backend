@@ -1,6 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger'
 
-import { IsEmail, IsNotEmpty, IsPhoneNumber, IsString, MinLength } from 'class-validator'
+import {
+	IsEmail,
+	IsNotEmpty,
+	IsOptional,
+	IsPhoneNumber,
+	IsString,
+	MinLength,
+} from 'class-validator'
 
 export class SignInWithEmailDto {
 	@IsEmail()
@@ -11,6 +18,15 @@ export class SignInWithEmailDto {
 	@MinLength(8)
 	@ApiProperty({ description: 'Пароль', type: String, format: 'password', required: true })
 	password: string
+
+	@IsString()
+	@IsOptional()
+	@ApiProperty({
+		description: 'Код двухфакторной аутентификации почты',
+		type: String,
+		required: false,
+	})
+	twoFactorMailAuthCode?: string
 }
 
 export class SignInWithPhoneDto {
@@ -22,4 +38,13 @@ export class SignInWithPhoneDto {
 	@MinLength(8)
 	@ApiProperty({ description: 'Пароль', type: String, format: 'password', required: true })
 	password: string
+
+	@IsString()
+	@IsOptional()
+	@ApiProperty({
+		description: 'Код двухфакторной аутентификации почты',
+		type: String,
+		required: false,
+	})
+	twoFactorMailAuthCode?: string
 }

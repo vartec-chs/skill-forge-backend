@@ -1,18 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common'
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger'
-
-import { Role } from '@prisma/client'
+import { Body, Controller, Get, Post, Req } from '@nestjs/common'
+import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger'
 
 import { CreateUserDto } from '@/modules/users/dto/create-user.dto'
 
 import { AuthService } from './auth.service'
 import { CurrentUser } from './decorators/current-user.decorator'
 import { Public } from './decorators/public.decorator'
-import { Roles } from './decorators/roles.decorator'
-import { ConfirmEmailDto } from './dto/confirm-email.dto'
-import { ChangePasswordDto, ResetPasswordDto } from './dto/reset-password.dto'
 import { SignInWithEmailDto, SignInWithPhoneDto } from './dto/sign-in.dto'
-import { PasswordResetService } from './password.service'
 
 import { Request } from 'express'
 
@@ -21,7 +15,6 @@ import { Request } from 'express'
 export class AuthController {
 	constructor(
 		private readonly authService: AuthService,
-		private readonly passwordResetService: PasswordResetService,
 	) {}
 
 	@Public()
@@ -61,48 +54,19 @@ export class AuthController {
 		return await this.authService.signOut(req)
 	}
 
-	@Post('change-password')
-	@ApiOperation({ summary: 'Смена пароля' })
-	async changePassword(
-		@Body() changePasswordDto: ChangePasswordDto,
-		@CurrentUser('userId') userId: string,
-	) {
-		return await this.passwordResetService.changePassword(userId, changePasswordDto)
+	@Get('check-auth')
+	@ApiOperation({ summary: 'Проверка авторизации' })
+	async checkAuth(@CurrentUser('userId') userId: string) {
+		return {
+			statusCode: 200,
+			message: 'Авторизация успешна',
+			data: userId,
+		}
 	}
 
 	@Get('me')
 	@ApiOperation({ summary: 'Получение информации о пользователе' })
 	async getMe(@CurrentUser('userId') userId: string) {
 		return await this.authService.getMe(userId)
-	}
-
-	@Public()
-	@Post('resend-confirm-email')
-	@ApiOperation({ summary: 'Переслать код подтверждения' })
-	@ApiQuery({ name: 'email', description: 'Электронная почта', required: true, type: String })
-	async resendConfirmEmail(@Query('email') email: string) {
-		return await this.authService.resendConfirmEmail(email)
-	}
-
-	@Public()
-	@Post('confirm-email')
-	@ApiOperation({ summary: 'Подтверждение электронной почты' })
-	async confirmEmail(@Body() confirmEmailDto: ConfirmEmailDto) {
-		return await this.authService.confirmEmail(confirmEmailDto.email, confirmEmailDto.token)
-	}
-
-	@Public()
-	@Post('request-password-reset/:email')
-	@ApiOperation({ summary: 'Запрос на сброс пароля' })
-	@ApiParam({ name: 'email', description: 'Электронная почта', required: true, type: String })
-	async requestPasswordReset(@Param('email') email: string) {
-		return await this.passwordResetService.sendResetPasswordEmail(email)
-	}
-
-	@Public()
-	@Post('password-reset')
-	@ApiOperation({ summary: 'Сброс пароля' })
-	async passwordReset(@Body() resetPasswordDto: ResetPasswordDto) {
-		return await this.passwordResetService.resetPassword(resetPasswordDto)
 	}
 }

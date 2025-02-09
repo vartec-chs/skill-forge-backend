@@ -7,13 +7,22 @@ import { UsersModule } from '@/modules/users/users.module'
 
 import { AuthController } from './auth.controller'
 import { AuthService } from './auth.service'
-import { PasswordResetService } from './password.service'
+import { EmailConfirmationModule } from './email-confirmation/email-confirmation.module'
+import { PasswordRecoveryModule } from './password-recovery/password-recovery.module'
 import { AccessTokenStrategy } from './strategies/accessToken.strategy'
 import { RefreshTokenStrategy } from './strategies/refreshToken.strategy'
+import { TwoFactorAuthService } from './two-factor-auth/two-factor-auth.service'
 
 @Module({
-	imports: [JwtModule.register({}), PrismaModule, UsersModule, MailModule],
+	imports: [
+		JwtModule.register({}),
+		PrismaModule,
+		UsersModule,
+		MailModule,
+		PasswordRecoveryModule,
+		EmailConfirmationModule,
+	],
 	controllers: [AuthController],
-	providers: [AuthService, AccessTokenStrategy, RefreshTokenStrategy, PasswordResetService],
+	providers: [AuthService, AccessTokenStrategy, RefreshTokenStrategy, TwoFactorAuthService],
 })
 export class AuthModule {}

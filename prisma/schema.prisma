@@ -17,7 +17,7 @@ model User {
   lastName  String  @map("last_name")
   surname   String?
 
-  dateOfBirth DateTime? @map("date_of_birth")
+  dateOfBirth String? @map("date_of_birth")
   gender      Gender?
 
   role      Role[]   @default([GUEST])
@@ -29,6 +29,8 @@ model User {
 
   emailConfirmed Boolean @default(false) @map("email_confirmed")
   phoneConfirmed Boolean @default(false) @map("phone_confirmed")
+
+  isTwoFactorMailEnabled Boolean @default(true) @map("is_two_factor_mail_enabled")
 
   confirmTokens ConfirmTokens[]
   refreshTokens RefreshToken[]
@@ -61,13 +63,13 @@ model ConfirmTokens {
   @@map("confirm_tokens")
 }
 
-
 enum ConfirmCodeType {
   MAIL
   PHONE
   RESET_PASSWORD
   RESET_PHONE
   RESET_EMAIL
+  TWO_FACTOR_MAIL
 }
 
 model RefreshToken {

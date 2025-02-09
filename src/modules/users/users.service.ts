@@ -5,6 +5,7 @@ import { PrismaService } from '@/modules/prisma/prisma.service'
 import { CreateUserDto } from './dto/create-user.dto'
 
 import * as argon2 from 'argon2'
+import { format, parseISO } from 'date-fns'
 
 @Injectable()
 export class UsersService {
@@ -28,13 +29,13 @@ export class UsersService {
 
 		if (userExists) throw new BadRequestException('Такой пользователь уже существует')
 
+		const userDate = format(createUserDto.dateOfBirth, 'yyyy-MM-dd')
+
 		return await this.prismaService.user.create({
 			data: {
 				...createUserDto,
 				password: await argon2.hash(createUserDto.password),
-				dateOfBirth: createUserDto.dateOfBirth
-					? new Date(createUserDto.dateOfBirth).toISOString()
-					: null,
+				dateOfBirth: userDate,
 			},
 			select: {
 				id: true,
@@ -82,6 +83,7 @@ export class UsersService {
 				role: true,
 				password: true,
 				emailConfirmed: true,
+				isTwoFactorMailEnabled: true,
 			},
 		})
 

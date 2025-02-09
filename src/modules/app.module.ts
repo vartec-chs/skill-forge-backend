@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
 
 import { AuthModule } from './auth/auth.module'
+import { FilesModule } from './files/files.module'
 import { MailModule } from './mail/mail.module'
 import { PrismaModule } from './prisma/prisma.module'
 import { UsersModule } from './users/users.module'
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module'
 		UsersModule,
 		PrismaModule,
 		MailModule,
+		FilesModule,
 	],
 	controllers: [],
 	providers: [],
